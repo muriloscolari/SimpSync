@@ -18,6 +18,9 @@ derivation happen in the client.
 The server never receives the master password or plaintext entity data. `envelope`
 is an opaque, versioned client-side encrypted payload.
 
+Set `ALLOWED_ORIGINS` to a comma-separated list before using WebSocket clients.
+The server rejects browser WebSocket origins by default when it is empty.
+
 ## Development
 
 ```sh

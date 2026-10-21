@@ -3,14 +3,16 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	Port        string
-	DatabaseURL string
-	SessionTTL  time.Duration
-	AuthPepper  string
+	Port           string
+	DatabaseURL    string
+	SessionTTL     time.Duration
+	AuthPepper     string
+	AllowedOrigins []string
 }
 
 func Load() Config {
@@ -25,11 +27,22 @@ func Load() Config {
 		port = "8080"
 	}
 	return Config{
-		Port:        port,
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		SessionTTL:  ttl,
-		AuthPepper:  os.Getenv("AUTH_PEPPER"),
+		Port:           port,
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		SessionTTL:     ttl,
+		AuthPepper:     os.Getenv("AUTH_PEPPER"),
+		AllowedOrigins: splitCSV(os.Getenv("ALLOWED_ORIGINS")),
 	}
+}
+
+func splitCSV(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func IntEnv(name string, fallback int) int {

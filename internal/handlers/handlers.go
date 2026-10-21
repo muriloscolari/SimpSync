@@ -175,7 +175,21 @@ func (h *Handler) ws(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	upgrader := websocket.Upgrader{CheckOrigin: func(request *http.Request) bool {
+		if len(h.Config.AllowedOrigins) == 0 {
+			return request.Header.Get("Origin") == ""
+		}
+		origin := request.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		for _, allowed := range h.Config.AllowedOrigins {
+			if origin == allowed {
+				return true
+			}
+		}
+		return false
+	}}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
