@@ -11,6 +11,7 @@ type Credentials struct {
 type Session struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	DeviceID  string    `json:"deviceId"`
 }
 
 type Blob struct {
@@ -37,4 +38,8 @@ type Device struct {
 	DeviceName string    `json:"deviceName"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
+}
+
+type SessionRefresh struct {
+	Token string `json:"token"`
 }

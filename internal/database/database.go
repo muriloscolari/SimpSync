@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/muriloscolari/SimpSync/internal/models"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -44,17 +45,48 @@ func (s *Store) CreateUser(ctx context.Context, email, verifier string) (uuid.UU
 
 func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, deviceName string, tokenHash []byte, expires time.Time) (uuid.UUID, error) {
 	id := uuid.New()
-	_, err := s.Pool.Exec(ctx, `INSERT INTO device_session(id,user_id,device_name,token_hash) VALUES($1,$2,$3,$4)`, id, userID, deviceName, tokenHash)
+	_, err := s.Pool.Exec(ctx, `INSERT INTO device_session(id,user_id,device_name,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)`, id, userID, deviceName, tokenHash, expires)
 	return id, err
 }
 
 func (s *Store) SessionUser(ctx context.Context, tokenHash []byte) (uuid.UUID, error) {
 	var userID uuid.UUID
-	err := s.Pool.QueryRow(ctx, `UPDATE device_session SET last_seen_at=now() WHERE token_hash=$1 AND revoked_at IS NULL RETURNING user_id`, tokenHash).Scan(&userID)
+	err := s.Pool.QueryRow(ctx, `UPDATE device_session SET last_seen_at=now() WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at > now() RETURNING user_id`, tokenHash).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, ErrNotFound
 	}
 	return userID, err
+}
+
+func (s *Store) RevokeSession(ctx context.Context, tokenHash []byte) error {
+	result, err := s.Pool.Exec(ctx, `UPDATE device_session SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) Devices(ctx context.Context, userID uuid.UUID) ([]models.Device, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, device_name, created_at, last_seen_at
+		FROM device_session WHERE user_id=$1 AND revoked_at IS NULL
+		ORDER BY last_seen_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var devices []models.Device
+	for rows.Next() {
+		var device models.Device
+		if err := rows.Scan(&device.ID, &device.DeviceName, &device.CreatedAt, &device.LastSeenAt); err != nil {
+			return nil, err
+		}
+		devices = append(devices, device)
+	}
+	return devices, rows.Err()
 }
 
 func (s *Store) UpsertBlob(ctx context.Context, userID uuid.UUID, entityType, entityID string, envelope []byte, deleted bool) (int64, error) {

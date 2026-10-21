@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS device_session (
     token_hash BYTEA NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
     revoked_at TIMESTAMPTZ
 );
 

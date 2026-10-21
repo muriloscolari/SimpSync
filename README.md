@@ -9,6 +9,8 @@ derivation happen in the client.
 - `GET /healthz`
 - `POST /v1/auth/register`
 - `POST /v1/auth/login`
+- `POST /v1/auth/logout`
+- `GET /v1/devices`
 - `POST /v1/sync`
 - `GET /v1/ws`
 

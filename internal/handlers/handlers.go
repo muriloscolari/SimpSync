@@ -27,6 +27,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/healthz", h.health)
 	mux.HandleFunc("/v1/auth/register", h.register)
 	mux.HandleFunc("/v1/auth/login", h.login)
+	mux.HandleFunc("/v1/auth/logout", h.logout)
+	mux.HandleFunc("/v1/devices", h.devices)
 	mux.HandleFunc("/v1/sync", h.sync)
 	mux.HandleFunc("/v1/ws", h.ws)
 	return logging(mux)
@@ -82,11 +84,41 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, create bo
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
-	if _, err = h.Store.CreateSession(r.Context(), userID, input.DeviceName, tokenHash, time.Now().Add(h.Config.SessionTTL)); err != nil {
+	expires := time.Now().Add(h.Config.SessionTTL)
+	sessionID, err := h.Store.CreateSession(r.Context(), userID, input.DeviceName, tokenHash, expires)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
-	writeJSON(w, http.StatusOK, models.Session{Token: token, ExpiresAt: time.Now().Add(h.Config.SessionTTL)})
+	writeJSON(w, http.StatusOK, models.Session{Token: token, ExpiresAt: expires, DeviceID: sessionID.String()})
+}
+
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	raw := bearerToken(r)
+	if raw == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	digest := sha256.Sum256([]byte(raw))
+	if err := h.Store.RevokeSession(r.Context(), digest[:]); err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) devices(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.user(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	devices, err := h.Store.Devices(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list devices")
+		return
+	}
+	writeJSON(w, http.StatusOK, devices)
 }
 
 func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
@@ -158,13 +190,21 @@ func (h *Handler) ws(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) user(r *http.Request) (uuid.UUID, bool) {
-	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	raw := bearerToken(r)
 	if raw == "" {
 		return uuid.Nil, false
 	}
 	digest := sha256.Sum256([]byte(raw))
 	id, err := h.Store.SessionUser(r.Context(), digest[:])
 	return id, err == nil
+}
+
+func bearerToken(r *http.Request) string {
+	value := r.Header.Get("Authorization")
+	if len(value) < len("Bearer ") || !strings.EqualFold(value[:len("Bearer ")], "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(value[len("Bearer "):])
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
