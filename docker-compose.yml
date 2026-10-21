@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: simpsync
+      POSTGRES_PASSWORD: simpsync
+      POSTGRES_DB: simpsync
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simpsync -d simpsync"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  server:
+    build: .
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://simpsync:simpsync@postgres:5432/simpsync?sslmode=disable
+      SESSION_TTL: 720h
+      AUTH_PEPPER: ${AUTH_PEPPER:-replace-with-a-long-random-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+volumes:
+  postgres-data:
