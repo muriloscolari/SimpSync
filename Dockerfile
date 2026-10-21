@@ -9,5 +9,6 @@ FROM alpine:3.20
 RUN adduser -D -H -u 10001 app
 USER app
 COPY --from=build /out/simpsync /simpsync
+COPY --from=build /src/migrations /migrations
 EXPOSE 8080
 ENTRYPOINT ["/simpsync"]

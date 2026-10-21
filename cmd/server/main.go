@@ -24,6 +24,9 @@ func main() {
 		log.Fatalf("database: %v", err)
 	}
 	defer store.Pool.Close()
+	if err := store.Migrate(ctx, "migrations"); err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           (&handlers.Handler{Store: store, Config: cfg, Hub: syncws.NewHub()}).Routes(),

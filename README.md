@@ -34,6 +34,9 @@ Without PostgreSQL, run the unit tests:
 go test ./...
 ```
 
+The server applies ordered files from `migrations/` on startup and records
+completed files in `schema_migration`. Keep migration files append-only.
+
 The current MVP intentionally does not implement password recovery, conflict
 merging, or device listing/revocation endpoints yet. Those are required before
 production deployment.
