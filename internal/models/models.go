@@ -3,9 +3,10 @@ package models
 import "time"
 
 type Credentials struct {
-	Email      string `json:"email"`
-	AuthProof  string `json:"authProof"`
-	DeviceName string `json:"deviceName"`
+	Email           string `json:"email"`
+	AuthProof       string `json:"authProof"`
+	DeviceName      string `json:"deviceName"`
+	RecoveryKeyHash string `json:"recoveryKeyHash,omitempty"`
 }
 
 type Session struct {
@@ -42,4 +43,11 @@ type Device struct {
 
 type SessionRefresh struct {
 	Token string `json:"token"`
+}
+
+type RecoveryRequest struct {
+	Email           string `json:"email"`
+	RecoveryKeyHash string `json:"recoveryKeyHash"`
+	NewAuthProof    string `json:"newAuthProof"`
+	DeviceName      string `json:"deviceName"`
 }

@@ -27,6 +27,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/healthz", h.health)
 	mux.HandleFunc("/v1/auth/register", h.register)
 	mux.HandleFunc("/v1/auth/login", h.login)
+	mux.HandleFunc("/v1/auth/recover", h.recover)
 	mux.HandleFunc("/v1/auth/logout", h.logout)
 	mux.HandleFunc("/v1/devices", h.devices)
 	mux.HandleFunc("/v1/sync", h.sync)
@@ -68,12 +69,23 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, create bo
 			return
 		}
 		userID, err = h.Store.CreateUser(r.Context(), input.Email, verifier)
+		if err == nil && input.RecoveryKeyHash != "" {
+			if len(input.RecoveryKeyHash) > 512 {
+				writeError(w, http.StatusBadRequest, "recovery key hash is too long")
+				return
+			}
+			if err = h.Store.SetRecoveryKey(r.Context(), userID, []byte(input.RecoveryKeyHash)); err != nil {
+				writeError(w, http.StatusInternalServerError, "could not store recovery metadata")
+				return
+			}
+		}
 	} else {
 		var verifier string
 		userID, verifier, err = h.Store.UserByEmail(r.Context(), input.Email)
 		if err == nil && !auth.Verify(input.AuthProof, verifier, h.Config.AuthPepper) {
 			err = database.ErrNotFound
 		}
+
 	}
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
@@ -91,6 +103,43 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, create bo
 		return
 	}
 	writeJSON(w, http.StatusOK, models.Session{Token: token, ExpiresAt: expires, DeviceID: sessionID.String()})
+}
+
+func (h *Handler) recover(w http.ResponseWriter, r *http.Request) {
+	var input models.RecoveryRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	input.RecoveryKeyHash = strings.TrimSpace(input.RecoveryKeyHash)
+	input.DeviceName = strings.TrimSpace(input.DeviceName)
+	if input.Email == "" || input.RecoveryKeyHash == "" || len(input.NewAuthProof) < 32 || input.DeviceName == "" {
+		writeError(w, http.StatusBadRequest, "email, recoveryKeyHash, newAuthProof and deviceName are required")
+		return
+	}
+	verifier, err := auth.Verifier(input.NewAuthProof, h.Config.AuthPepper)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid authentication proof")
+		return
+	}
+	userID, err := h.Store.RecoverUser(r.Context(), input.Email, []byte(input.RecoveryKeyHash), verifier)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid recovery credentials")
+		return
+	}
+	token, tokenHash, err := auth.Token()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+	expires := time.Now().Add(h.Config.SessionTTL)
+	deviceID, err := h.Store.CreateSession(r.Context(), userID, input.DeviceName, tokenHash, expires)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Session{Token: token, ExpiresAt: expires, DeviceID: deviceID.String()})
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {

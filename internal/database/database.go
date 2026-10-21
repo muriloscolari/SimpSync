@@ -43,6 +43,30 @@ func (s *Store) CreateUser(ctx context.Context, email, verifier string) (uuid.UU
 	return id, err
 }
 
+func (s *Store) SetRecoveryKey(ctx context.Context, userID uuid.UUID, recoveryHash []byte) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO account_recovery(user_id,recovery_key_hash)
+		VALUES($1,$2)
+		ON CONFLICT(user_id) DO UPDATE SET recovery_key_hash=EXCLUDED.recovery_key_hash, rotated_at=now()`,
+		userID, recoveryHash)
+	return err
+}
+
+func (s *Store) RecoverUser(ctx context.Context, email string, recoveryHash []byte, verifier string) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := s.Pool.QueryRow(ctx, `
+		UPDATE app_user SET auth_verifier=$3
+		FROM account_recovery
+		WHERE app_user.id=account_recovery.user_id
+		  AND app_user.email=$1
+		  AND account_recovery.recovery_key_hash=$2
+		RETURNING app_user.id`, email, recoveryHash, verifier).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrNotFound
+	}
+	return userID, err
+}
+
 func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, deviceName string, tokenHash []byte, expires time.Time) (uuid.UUID, error) {
 	id := uuid.New()
 	_, err := s.Pool.Exec(ctx, `INSERT INTO device_session(id,user_id,device_name,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)`, id, userID, deviceName, tokenHash, expires)
