@@ -32,6 +32,7 @@ type SyncRequest struct {
 type SyncResponse struct {
 	Changes []Blob `json:"changes"`
 	Cursor  int64  `json:"cursor"`
+	HasMore bool   `json:"hasMore,omitempty"`
 }
 
 type Device struct {
@@ -39,6 +40,7 @@ type Device struct {
 	DeviceName string    `json:"deviceName"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
+	Current    bool      `json:"current,omitempty"`
 }
 
 type SessionRefresh struct {

@@ -17,23 +17,47 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("config: %v", err)
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
 	store, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}
 	defer store.Pool.Close()
+
 	if err := store.Migrate(ctx, "migrations"); err != nil {
 		log.Fatalf("migrations: %v", err)
 	}
+
+	// Periodic cleanup of expired/revoked device sessions so the table never grows unboundedly.
+	go func() {
+		_ = store.CleanupExpiredSessions(ctx)
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 30*time.Second)
+				_ = store.CleanupExpiredSessions(cleanupCtx)
+				cleanupCancel()
+			}
+		}
+	}()
+
+	hub := syncws.NewHub()
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           (&handlers.Handler{Store: store, Config: cfg, Hub: syncws.NewHub()}).Routes(),
+		Handler:           (&handlers.Handler{Store: store, Config: cfg, Hub: hub}).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 	go func() {
 		<-ctx.Done()
@@ -41,7 +65,7 @@ func main() {
 		defer shutdownCancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	log.Printf("SimpSync listening on %s", server.Addr)
+	log.Printf("SimpSync listening on %s (registration=%v, maxUsers=%d)", server.Addr, cfg.AllowRegistration, cfg.MaxUsers)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

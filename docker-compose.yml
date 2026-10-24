@@ -1,29 +1,72 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: simpsync
-      POSTGRES_PASSWORD: simpsync
-      POSTGRES_DB: simpsync
+      POSTGRES_USER: ${POSTGRES_USER:-simpsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simpsync}
+      POSTGRES_DB: ${POSTGRES_DB:-simpsync}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    networks:
+      - internal-db
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U simpsync -d simpsync"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-simpsync} -d $${POSTGRES_DB:-simpsync}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
   server:
     build: .
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 100
     environment:
-      PORT: 8080
-      DATABASE_URL: postgres://simpsync:simpsync@postgres:5432/simpsync?sslmode=disable
-      SESSION_TTL: 720h
-      AUTH_PEPPER: ${AUTH_PEPPER:-replace-with-a-long-random-secret}
+      PORT: 8787
+      DATABASE_URL: postgres://${POSTGRES_USER:-simpsync}:${POSTGRES_PASSWORD:-simpsync}@postgres:5432/${POSTGRES_DB:-simpsync}?sslmode=disable
+      SESSION_TTL: ${SESSION_TTL:-720h}
+      AUTH_PEPPER: ${AUTH_PEPPER}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      MAX_USERS: ${MAX_USERS:-1}
+      MAX_BLOBS_PER_USER: ${MAX_BLOBS_PER_USER:-50000}
+      MAX_DEVICES_PER_USER: ${MAX_DEVICES_PER_USER:-10}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://sync.muriloscolari.me}
+      TRUST_LOOPBACK_PROXY: ${TRUST_LOOPBACK_PROXY:-true}
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - internal-db
+      - edge
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${PORT:-8787}:8787"
+
+networks:
+  internal-db:
+    driver: bridge
+    internal: true
+  edge:
+    driver: bridge
+
 volumes:
   postgres-data:

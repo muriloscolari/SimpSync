@@ -7,8 +7,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/simpsync ./cmd/ser
 
 FROM alpine:3.20
 RUN adduser -D -H -u 10001 app
+WORKDIR /app
 USER app
-COPY --from=build /out/simpsync /simpsync
-COPY --from=build /src/migrations /migrations
-EXPOSE 8080
-ENTRYPOINT ["/simpsync"]
+COPY --from=build /out/simpsync /app/simpsync
+COPY --from=build /src/migrations /app/migrations
+EXPOSE 8787
+ENTRYPOINT ["/app/simpsync"]
