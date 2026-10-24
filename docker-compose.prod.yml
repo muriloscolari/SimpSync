@@ -1,0 +1,57 @@
+services:
+  server:
+    image: ghcr.io/muriloscolari/simpsync:latest
+    container_name: simpsync-server
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      - PORT=8787
+      - POSTGRES_HOST=simpsync-db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=simpsync
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=simpsync
+      - AUTH_PEPPER=${AUTH_PEPPER}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      - MAX_USERS=${MAX_USERS:-1}
+      - RATE_LIMIT_RPS=5
+      - RATE_LIMIT_BURST=10
+      - CLEANUP_INTERVAL_HOURS=24
+    depends_on:
+      simpsync-db:
+        condition: service_healthy
+    networks:
+      - simpsync-net
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  simpsync-db:
+    image: postgres:15-alpine
+    container_name: simpsync-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=simpsync
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=simpsync
+    volumes:
+      - simpsync_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simpsync"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - simpsync-net
+
+networks:
+  simpsync-net:
+    driver: bridge
+
+volumes:
+  simpsync_pgdata:
